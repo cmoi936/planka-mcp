@@ -63,19 +63,50 @@ Add to your MCP client configuration:
 
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `list_projects` | List all Planka projects |
-| `list_boards` | List boards in a project |
-| `list_lists` | List columns on a board |
-| `list_cards` | List cards on a board |
-| `create_board` | Create a new board (requires Project Manager role) |
-| `create_list` | Create a new column on a board |
-| `create_card` | Create a new card in a list |
-| `update_card` | Update card name/description |
-| `move_card` | Move card to different list |
-| `delete_card` | Delete a card |
-| `delete_list` | Delete a list and all its cards |
+| Tool | Description | Programmatic |
+|------|-------------|:------------:|
+| `list_projects` | List all Planka projects | Yes |
+| `list_boards` | List boards in a project | Yes |
+| `list_lists` | List columns on a board | Yes |
+| `list_cards` | List cards on a board | Yes |
+| `create_board` | Create a new board (requires Project Manager role) | Yes |
+| `create_list` | Create a new column on a board | Yes |
+| `create_card` | Create a new card in a list | Yes |
+| `update_card` | Update card name/description | Yes |
+| `move_card` | Move card to different list | Yes |
+| `delete_card` | Delete a card | No |
+| `delete_list` | Delete a list and all its cards | No |
+
+## Programmatic Tool Calling (Beta)
+
+This server supports [Anthropic's programmatic tool calling](https://www.anthropic.com/engineering/advanced-tool-use) beta feature, which allows Claude to write Python code that orchestrates multiple tool calls efficiently.
+
+Most tools are enabled for programmatic calling via `allowed_callers: ["code_execution_20250825"]`. Delete operations are excluded for safety.
+
+### Enabling in the Anthropic API
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+response = client.beta.messages.create(
+    betas=["advanced-tool-use-2025-11-20"],
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=4096,
+    tools=[
+        {"type": "code_execution_20250825", "name": "code_execution"},
+        # Include your planka-mcp tools here with their schemas
+    ]
+)
+```
+
+### Example Use Cases
+
+With programmatic calling enabled, Claude can efficiently handle batch operations:
+
+- "Move all cards containing 'blocked' to the Blocked column"
+- "Create cards for each item in this list"
+- "Find all cards assigned to me across all boards"
 
 ## Claude Code Integration
 

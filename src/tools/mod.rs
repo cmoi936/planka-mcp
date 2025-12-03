@@ -1,8 +1,15 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::mcp::types::{Tool, ToolCallResult};
+use crate::mcp::types::{Tool, ToolAnnotations, ToolCallResult};
 use crate::planka::PlankaClient;
+
+/// Creates annotations enabling programmatic tool calling
+fn programmatic_annotations() -> Option<ToolAnnotations> {
+    Some(ToolAnnotations {
+        allowed_callers: Some(vec!["code_execution_20250825".to_string()]),
+    })
+}
 
 /// Returns the list of available tools
 pub fn list_tools() -> Vec<Tool> {
@@ -15,6 +22,7 @@ pub fn list_tools() -> Vec<Tool> {
                 "properties": {},
                 "required": []
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "list_boards".to_string(),
@@ -29,6 +37,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["project_id"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "list_lists".to_string(),
@@ -43,6 +52,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["board_id"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "list_cards".to_string(),
@@ -57,6 +67,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["board_id"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "create_board".to_string(),
@@ -75,6 +86,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["project_id", "name"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "create_list".to_string(),
@@ -93,6 +105,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["board_id", "name"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "create_card".to_string(),
@@ -115,6 +128,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["list_id", "name"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "update_card".to_string(),
@@ -137,6 +151,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["card_id"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "move_card".to_string(),
@@ -159,6 +174,7 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["card_id", "list_id"]
             }),
+            annotations: programmatic_annotations(),
         },
         Tool {
             name: "delete_card".to_string(),
@@ -173,6 +189,8 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["card_id"]
             }),
+            // Not enabled for programmatic calling (destructive operation)
+            annotations: None,
         },
         Tool {
             name: "delete_list".to_string(),
@@ -187,6 +205,8 @@ pub fn list_tools() -> Vec<Tool> {
                 },
                 "required": ["list_id"]
             }),
+            // Not enabled for programmatic calling (destructive operation)
+            annotations: None,
         },
     ]
 }
@@ -454,5 +474,75 @@ async fn delete_list(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
     match client.delete_list(&args.list_id).await {
         Ok(()) => ToolCallResult::text("List deleted successfully"),
         Err(e) => ToolCallResult::error(format!("Failed to delete list: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_tools_returns_all_tools() {
+        let tools = list_tools();
+        assert_eq!(tools.len(), 11, "Expected 11 tools");
+
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"list_projects"));
+        assert!(names.contains(&"list_boards"));
+        assert!(names.contains(&"list_lists"));
+        assert!(names.contains(&"list_cards"));
+        assert!(names.contains(&"create_board"));
+        assert!(names.contains(&"create_list"));
+        assert!(names.contains(&"create_card"));
+        assert!(names.contains(&"update_card"));
+        assert!(names.contains(&"move_card"));
+        assert!(names.contains(&"delete_card"));
+        assert!(names.contains(&"delete_list"));
+    }
+
+    #[test]
+    fn test_programmatic_tools_have_allowed_callers() {
+        let tools = list_tools();
+        let programmatic_tools = [
+            "list_projects",
+            "list_boards",
+            "list_lists",
+            "list_cards",
+            "create_board",
+            "create_list",
+            "create_card",
+            "update_card",
+            "move_card",
+        ];
+
+        for tool_name in programmatic_tools {
+            let tool = tools.iter().find(|t| t.name == tool_name).unwrap();
+            let annotations = tool
+                .annotations
+                .as_ref()
+                .unwrap_or_else(|| panic!("{tool_name} should have annotations"));
+            let callers = annotations
+                .allowed_callers
+                .as_ref()
+                .unwrap_or_else(|| panic!("{tool_name} should have allowed_callers"));
+            assert!(
+                callers.contains(&"code_execution_20250825".to_string()),
+                "{tool_name} should allow code_execution_20250825"
+            );
+        }
+    }
+
+    #[test]
+    fn test_delete_tools_excluded_from_programmatic_calling() {
+        let tools = list_tools();
+        let delete_tools = ["delete_card", "delete_list"];
+
+        for tool_name in delete_tools {
+            let tool = tools.iter().find(|t| t.name == tool_name).unwrap();
+            assert!(
+                tool.annotations.is_none(),
+                "{tool_name} should NOT have annotations (destructive operation)"
+            );
+        }
     }
 }

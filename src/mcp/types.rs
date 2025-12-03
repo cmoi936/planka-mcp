@@ -121,6 +121,16 @@ pub struct Tool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<ToolAnnotations>,
+}
+
+/// Tool annotations for advanced features like programmatic tool calling
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolAnnotations {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_callers: Option<Vec<String>>,
 }
 
 /// tools/list response
@@ -164,5 +174,71 @@ impl ToolCallResult {
             content: vec![ToolContent::Text { text: text.into() }],
             is_error: Some(true),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_tool_annotations_serializes_correctly() {
+        let annotations = ToolAnnotations {
+            allowed_callers: Some(vec!["code_execution_20250825".to_string()]),
+        };
+
+        let json = serde_json::to_value(&annotations).unwrap();
+        assert_eq!(
+            json,
+            json!({
+                "allowedCallers": ["code_execution_20250825"]
+            })
+        );
+    }
+
+    #[test]
+    fn test_tool_annotations_omits_none_fields() {
+        let annotations = ToolAnnotations {
+            allowed_callers: None,
+        };
+
+        let json = serde_json::to_value(&annotations).unwrap();
+        assert_eq!(json, json!({}));
+    }
+
+    #[test]
+    fn test_tool_with_annotations_serializes_correctly() {
+        let tool = Tool {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            input_schema: json!({"type": "object"}),
+            annotations: Some(ToolAnnotations {
+                allowed_callers: Some(vec!["code_execution_20250825".to_string()]),
+            }),
+        };
+
+        let json = serde_json::to_value(&tool).unwrap();
+        assert_eq!(json["name"], "test_tool");
+        assert_eq!(json["description"], "A test tool");
+        assert_eq!(json["inputSchema"], json!({"type": "object"}));
+        assert_eq!(
+            json["annotations"]["allowedCallers"],
+            json!(["code_execution_20250825"])
+        );
+    }
+
+    #[test]
+    fn test_tool_without_annotations_omits_field() {
+        let tool = Tool {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            input_schema: json!({"type": "object"}),
+            annotations: None,
+        };
+
+        let json = serde_json::to_value(&tool).unwrap();
+        assert_eq!(json["name"], "test_tool");
+        assert!(!json.as_object().unwrap().contains_key("annotations"));
     }
 }
