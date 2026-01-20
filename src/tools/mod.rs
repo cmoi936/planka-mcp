@@ -147,7 +147,7 @@ pub fn list_tools() -> Vec<Tool> {
         },
         Tool {
             name: "update_card".to_string(),
-            description: "Update a card's name or description".to_string(),
+            description: "Update a card's properties (name, description, type, due date, etc.)".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -162,6 +162,28 @@ pub fn list_tools() -> Vec<Tool> {
                     "description": {
                         "type": "string",
                         "description": "New card description (optional)"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["project", "story"],
+                        "description": "Card type (optional)"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Due date in ISO 8601 format (optional)"
+                    },
+                    "is_due_completed": {
+                        "type": "boolean",
+                        "description": "Whether the due date is completed (optional)"
+                    },
+                    "board_id": {
+                        "type": "string",
+                        "description": "Move card to different board (optional)"
+                    },
+                    "cover_attachment_id": {
+                        "type": "string",
+                        "description": "Set cover image attachment ID (optional)"
                     }
                 },
                 "required": ["card_id"]
@@ -428,6 +450,12 @@ struct UpdateCardArgs {
     card_id: String,
     name: Option<String>,
     description: Option<String>,
+    #[serde(rename = "type")]
+    card_type: Option<String>,
+    due_date: Option<String>,
+    is_due_completed: Option<bool>,
+    board_id: Option<String>,
+    cover_attachment_id: Option<String>,
 }
 
 async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResult {
@@ -439,8 +467,29 @@ async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
         None => return ToolCallResult::error("Missing required argument: card_id"),
     };
 
+    // Parse card type if provided
+    use crate::planka::types::CardType;
+    let card_type = if let Some(ref type_str) = args.card_type {
+        match type_str.to_lowercase().as_str() {
+            "project" => Some(CardType::Project),
+            "story" => Some(CardType::Story),
+            _ => return ToolCallResult::error("Invalid card type. Must be 'project' or 'story'"),
+        }
+    } else {
+        None
+    };
+
     match client
-        .update_card(&args.card_id, args.name.as_deref(), args.description.as_deref())
+        .update_card(
+            &args.card_id,
+            args.name.as_deref(),
+            args.description.as_deref(),
+            card_type,
+            args.due_date.as_deref(),
+            args.is_due_completed,
+            args.board_id.as_deref(),
+            args.cover_attachment_id.as_deref(),
+        )
         .await
     {
         Ok(card) => {
