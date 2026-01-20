@@ -191,15 +191,23 @@ impl PlankaClient {
     pub async fn create_card(
         &self,
         list_id: &str,
+        card_type: CardType,
         name: &str,
         description: Option<&str>,
+        due_date: Option<&str>,
+        is_due_completed: Option<bool>,
+        stopwatch: Option<Stopwatch>,
     ) -> Result<Card, PlankaError> {
         let path = format!("/api/lists/{list_id}/cards");
 
         let body = CreateCardRequest {
+            card_type,
             name: name.to_string(),
             description: description.map(|s| s.to_string()),
             position: 65535.0, // Default position at end
+            due_date: due_date.map(|s| s.to_string()),
+            is_due_completed,
+            stopwatch,
         };
 
         let resp = self.request(reqwest::Method::POST, &path)

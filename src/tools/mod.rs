@@ -117,6 +117,12 @@ pub fn list_tools() -> Vec<Tool> {
                         "type": "string",
                         "description": "The list ID to create the card in"
                     },
+                    "type": {
+                        "type": "string",
+                        "enum": ["project", "story"],
+                        "description": "Type of the card (project or story)",
+                        "default": "project"
+                    },
                     "name": {
                         "type": "string",
                         "description": "The card title"
@@ -124,6 +130,15 @@ pub fn list_tools() -> Vec<Tool> {
                     "description": {
                         "type": "string",
                         "description": "Optional card description"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Optional due date (ISO 8601 format)"
+                    },
+                    "is_due_completed": {
+                        "type": "boolean",
+                        "description": "Whether the due date is completed"
                     }
                 },
                 "required": ["list_id", "name"]
@@ -359,8 +374,16 @@ async fn create_list(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
 #[derive(Deserialize)]
 struct CreateCardArgs {
     list_id: String,
+    #[serde(rename = "type", default = "default_card_type")]
+    card_type: String,
     name: String,
     description: Option<String>,
+    due_date: Option<String>,
+    is_due_completed: Option<bool>,
+}
+
+fn default_card_type() -> String {
+    "project".to_string()
 }
 
 async fn create_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResult {
@@ -372,8 +395,24 @@ async fn create_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
         None => return ToolCallResult::error("Missing required arguments: list_id, name"),
     };
 
+    // Parse card type
+    use crate::planka::types::CardType;
+    let card_type = match args.card_type.to_lowercase().as_str() {
+        "project" => CardType::Project,
+        "story" => CardType::Story,
+        _ => return ToolCallResult::error("Invalid card type. Must be 'project' or 'story'"),
+    };
+
     match client
-        .create_card(&args.list_id, &args.name, args.description.as_deref())
+        .create_card(
+            &args.list_id,
+            card_type,
+            &args.name,
+            args.description.as_deref(),
+            args.due_date.as_deref(),
+            args.is_due_completed,
+            None, // stopwatch not supported in tool args for now
+        )
         .await
     {
         Ok(card) => {
