@@ -13,13 +13,13 @@ docker pull ghcr.io/cmoi936/planka-mcp:latest
 ### From GitHub
 
 ```bash
-cargo install --git https://github.com/AcceleratedIndustries/planka-mcp
+cargo install --git https://github.com/cmoi936/planka-mcp
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/AcceleratedIndustries/planka-mcp
+git clone https://github.com/cmoi936/planka-mcp
 cd planka-mcp
 cargo build --release
 ```
