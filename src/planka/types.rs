@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Card types supported by Planka
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6,6 +7,15 @@ use serde::{Deserialize, Serialize};
 pub enum CardType {
     Project,
     Story,
+}
+
+impl fmt::Display for CardType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CardType::Project => write!(f, "project"),
+            CardType::Story => write!(f, "story"),
+        }
+    }
 }
 
 /// Stopwatch data for time tracking on cards

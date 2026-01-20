@@ -288,11 +288,7 @@ impl PlankaClient {
             body.insert("description".to_string(), serde_json::Value::String(d));
         }
         if let Some(t) = options.card_type {
-            let type_str = match t {
-                CardType::Project => "project",
-                CardType::Story => "story",
-            };
-            body.insert("type".to_string(), serde_json::Value::String(type_str.to_string()));
+            body.insert("type".to_string(), serde_json::Value::String(t.to_string()));
         }
         if let Some(dd) = options.due_date {
             body.insert("dueDate".to_string(), serde_json::Value::String(dd));
