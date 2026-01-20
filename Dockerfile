@@ -38,8 +38,7 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /app/target/release/planka-mcp /usr/local/bin/planka-mcp
 
 # Create a non-root user
-RUN useradd -m -u 1000 planka && \
-    chown planka:planka /usr/local/bin/planka-mcp
+RUN useradd -m -u 1000 planka
 
 USER planka
 
