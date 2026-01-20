@@ -2,6 +2,7 @@ use reqwest::{Client, header};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
 use super::types::*;
@@ -37,26 +38,47 @@ pub struct PlankaClient {
 
 impl PlankaClient {
     pub fn from_env() -> Result<Self, PlankaError> {
+        debug!("Initializing Planka client from environment variables");
+        
         let base_url = std::env::var("PLANKA_URL")
-            .map_err(|_| PlankaError::Config("PLANKA_URL not set".into()))?;
+            .map_err(|_| {
+                error!("PLANKA_URL environment variable not set");
+                PlankaError::Config("PLANKA_URL not set".into())
+            })?;
 
+        debug!(url = %base_url, "Parsing Planka base URL");
         let base_url = Url::parse(&base_url)
-            .map_err(|e| PlankaError::Config(format!("Invalid PLANKA_URL: {e}")))?;
+            .map_err(|e| {
+                error!(url = %base_url, error = %e, "Invalid PLANKA_URL format");
+                PlankaError::Config(format!("Invalid PLANKA_URL: {e}"))
+            })?;
 
         let auth = if let Ok(token) = std::env::var("PLANKA_TOKEN") {
+            debug!("Using token-based authentication");
             PlankaAuth::Token(token)
         } else {
+            debug!("Using email/password authentication");
             let email = std::env::var("PLANKA_EMAIL")
-                .map_err(|_| PlankaError::Config("PLANKA_TOKEN or PLANKA_EMAIL must be set".into()))?;
+                .map_err(|_| {
+                    error!("Neither PLANKA_TOKEN nor PLANKA_EMAIL is set");
+                    PlankaError::Config("PLANKA_TOKEN or PLANKA_EMAIL must be set".into())
+                })?;
             let password = std::env::var("PLANKA_PASSWORD")
-                .map_err(|_| PlankaError::Config("PLANKA_PASSWORD must be set when using PLANKA_EMAIL".into()))?;
+                .map_err(|_| {
+                    error!("PLANKA_PASSWORD not set but PLANKA_EMAIL is configured");
+                    PlankaError::Config("PLANKA_PASSWORD must be set when using PLANKA_EMAIL".into())
+                })?;
             PlankaAuth::Credentials { email, password }
         };
 
         let http = Client::builder()
             .build()
-            .map_err(PlankaError::Http)?;
+            .map_err(|e| {
+                error!(error = %e, "Failed to build HTTP client");
+                PlankaError::Http(e)
+            })?;
 
+        info!(base_url = %base_url, "Planka client configured successfully");
         Ok(Self {
             base_url,
             http,
@@ -67,39 +89,68 @@ impl PlankaClient {
 
     async fn get_token(&self) -> Result<String, PlankaError> {
         match &self.auth {
-            PlankaAuth::Token(token) => Ok(token.clone()),
+            PlankaAuth::Token(token) => {
+                trace!("Using configured bearer token");
+                Ok(token.clone())
+            }
             PlankaAuth::Credentials { email, password } => {
                 // Check cache first
                 {
                     let cache = self.cached_token.read().await;
                     if let Some(token) = cache.as_ref() {
+                        trace!("Using cached authentication token");
                         return Ok(token.clone());
                     }
                 }
 
                 // Fetch new token
+                info!(email = %email, "Authenticating with Planka API");
                 let url = self.base_url.join("/api/access-tokens")?;
 
+                trace!(url = %url, "Sending authentication request");
                 let resp = self.http
-                    .post(url)
+                    .post(url.clone())
                     .json(&serde_json::json!({
                         "emailOrUsername": email,
                         "password": password
                     }))
                     .send()
-                    .await?;
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            url = %url,
+                            error = %e,
+                            "Failed to send authentication request"
+                        );
+                        e
+                    })?;
 
-                if !resp.status().is_success() {
-                    let status = resp.status().as_u16();
+                let status = resp.status();
+                if !status.is_success() {
+                    let status_code = status.as_u16();
                     let body = resp.text().await.unwrap_or_default();
-                    return Err(PlankaError::Status(status, body));
+                    error!(
+                        status = status_code,
+                        response_body = %body,
+                        "Authentication failed"
+                    );
+                    return Err(PlankaError::Status(status_code, body));
                 }
 
-                let data: serde_json::Value = resp.json().await?;
+                let data: serde_json::Value = resp.json().await.map_err(|e| {
+                    error!(error = %e, "Failed to parse authentication response");
+                    e
+                })?;
+                
+                trace!(response = ?data, "Authentication response received");
+                
                 let token = data["item"]
                     .as_str()
                     .map(|s| s.to_string())
-                    .ok_or_else(|| PlankaError::Config("No token in login response".into()))?;
+                    .ok_or_else(|| {
+                        error!("No token in authentication response");
+                        PlankaError::Config("No token in login response".into())
+                    })?;
 
                 // Cache the token
                 {
@@ -107,88 +158,171 @@ impl PlankaClient {
                     *cache = Some(token.clone());
                 }
 
+                info!("Authentication successful, token cached");
                 Ok(token)
             }
         }
     }
 
     async fn request(&self, method: reqwest::Method, path: &str) -> Result<reqwest::RequestBuilder, PlankaError> {
+        trace!(method = %method, path = %path, "Preparing API request");
         let token = self.get_token().await?;
         let url = self.base_url.join(path)?;
 
+        debug!(method = %method, url = %url, "Building API request");
         Ok(self.http
             .request(method, url)
             .header(header::AUTHORIZATION, format!("Bearer {token}")))
     }
 
     pub async fn list_projects(&self) -> Result<Vec<Project>, PlankaError> {
+        debug!("Listing all projects");
         let resp = self.request(reqwest::Method::GET, "/api/projects")
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = "/api/projects", "Failed to send request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = "/api/projects",
+                response_body = %body,
+                "API request failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: ProjectsResponse = resp.json().await?;
+        let data: ProjectsResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = "/api/projects", "Failed to parse response JSON");
+            e
+        })?;
+        
+        info!(count = data.items.len(), "Successfully listed projects");
+        trace!(projects = ?data.items, "Project details");
         Ok(data.items)
     }
 
     pub async fn list_boards(&self, project_id: &str) -> Result<Vec<Board>, PlankaError> {
+        debug!(project_id = %project_id, "Listing boards for project");
         let path = format!("/api/projects/{project_id}");
         let resp = self.request(reqwest::Method::GET, &path)
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "API request failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: ProjectResponse = resp.json().await?;
+        let data: ProjectResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse response JSON");
+            e
+        })?;
+        
+        info!(project_id = %project_id, count = data.included.boards.len(), "Successfully listed boards");
+        trace!(boards = ?data.included.boards, "Board details");
         Ok(data.included.boards)
     }
 
     pub async fn list_cards(&self, board_id: &str) -> Result<Vec<Card>, PlankaError> {
+        debug!(board_id = %board_id, "Listing cards for board");
         let path = format!("/api/boards/{board_id}");
         let resp = self.request(reqwest::Method::GET, &path)
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "API request failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: BoardResponse = resp.json().await?;
+        let data: BoardResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse response JSON");
+            e
+        })?;
+        
+        info!(board_id = %board_id, count = data.included.cards.len(), "Successfully listed cards");
+        trace!(cards = ?data.included.cards, "Card details");
         Ok(data.included.cards)
     }
 
     pub async fn list_lists(&self, board_id: &str) -> Result<Vec<List>, PlankaError> {
+        debug!(board_id = %board_id, "Listing lists for board");
         let path = format!("/api/boards/{board_id}");
         let resp = self.request(reqwest::Method::GET, &path)
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "API request failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: BoardResponse = resp.json().await?;
+        let data: BoardResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse response JSON");
+            e
+        })?;
+        
+        info!(board_id = %board_id, count = data.included.lists.len(), "Successfully listed lists");
+        trace!(lists = ?data.included.lists, "List details");
         Ok(data.included.lists)
     }
 
     pub async fn create_card(&self, options: CreateCardOptions) -> Result<Card, PlankaError> {
+        info!(
+            list_id = %options.list_id,
+            card_type = %options.card_type,
+            name = %options.name,
+            "Creating new card"
+        );
+        trace!(options = ?options, "Card creation options");
+        
         let path = format!("/api/lists/{}/cards", options.list_id);
 
         let body = CreateCardRequest {
@@ -201,19 +335,38 @@ impl PlankaClient {
             stopwatch: options.stopwatch,
         };
 
+        trace!(request_body = ?body, "Card creation request");
+
         let resp = self.request(reqwest::Method::POST, &path)
             .await?
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send card creation request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "Card creation failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: CardResponse = resp.json().await?;
+        let data: CardResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse card creation response");
+            e
+        })?;
+        
+        info!(card_id = %data.item.id, "Card created successfully");
+        trace!(card = ?data.item, "Created card details");
         Ok(data.item)
     }
 
@@ -222,6 +375,7 @@ impl PlankaClient {
         project_id: &str,
         name: &str,
     ) -> Result<Board, PlankaError> {
+        info!(project_id = %project_id, name = %name, "Creating new board");
         let path = format!("/api/projects/{project_id}/boards");
 
         let body = CreateBoardRequest {
@@ -229,19 +383,38 @@ impl PlankaClient {
             position: 65535.0,
         };
 
+        trace!(request_body = ?body, "Board creation request");
+
         let resp = self.request(reqwest::Method::POST, &path)
             .await?
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send board creation request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "Board creation failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: BoardCreateResponse = resp.json().await?;
+        let data: BoardCreateResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse board creation response");
+            e
+        })?;
+        
+        info!(board_id = %data.item.id, "Board created successfully");
+        trace!(board = ?data.item, "Created board details");
         Ok(data.item)
     }
 
@@ -250,6 +423,7 @@ impl PlankaClient {
         board_id: &str,
         name: &str,
     ) -> Result<List, PlankaError> {
+        info!(board_id = %board_id, name = %name, "Creating new list");
         let path = format!("/api/boards/{board_id}/lists");
 
         let body = CreateListRequest {
@@ -257,19 +431,38 @@ impl PlankaClient {
             position: 65535.0,
         };
 
+        trace!(request_body = ?body, "List creation request");
+
         let resp = self.request(reqwest::Method::POST, &path)
             .await?
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send list creation request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "List creation failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: ListResponse = resp.json().await?;
+        let data: ListResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse list creation response");
+            e
+        })?;
+        
+        info!(list_id = %data.item.id, "List created successfully");
+        trace!(list = ?data.item, "Created list details");
         Ok(data.item)
     }
 
@@ -278,6 +471,9 @@ impl PlankaClient {
         card_id: &str,
         options: UpdateCardOptions,
     ) -> Result<Card, PlankaError> {
+        info!(card_id = %card_id, "Updating card");
+        trace!(options = ?options, "Card update options");
+        
         let path = format!("/api/cards/{card_id}");
 
         let mut body = serde_json::Map::new();
@@ -303,19 +499,38 @@ impl PlankaClient {
             body.insert("coverAttachmentId".to_string(), serde_json::Value::String(cid));
         }
 
+        trace!(request_body = ?body, "Card update request");
+
         let resp = self.request(reqwest::Method::PATCH, &path)
             .await?
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send card update request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "Card update failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: CardResponse = resp.json().await?;
+        let data: CardResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse card update response");
+            e
+        })?;
+        
+        info!(card_id = %card_id, "Card updated successfully");
+        trace!(card = ?data.item, "Updated card details");
         Ok(data.item)
     }
 
@@ -325,6 +540,7 @@ impl PlankaClient {
         list_id: &str,
         position: Option<f64>,
     ) -> Result<Card, PlankaError> {
+        info!(card_id = %card_id, list_id = %list_id, position = ?position, "Moving card");
         let path = format!("/api/cards/{card_id}");
 
         let mut body = serde_json::Map::new();
@@ -332,53 +548,98 @@ impl PlankaClient {
         let pos = position.unwrap_or(65535.0);
         body.insert("position".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(pos).unwrap()));
 
+        trace!(request_body = ?body, "Card move request");
+
         let resp = self.request(reqwest::Method::PATCH, &path)
             .await?
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send card move request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "Card move failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
-        let data: CardResponse = resp.json().await?;
+        let data: CardResponse = resp.json().await.map_err(|e| {
+            error!(error = %e, path = %path, "Failed to parse card move response");
+            e
+        })?;
+        
+        info!(card_id = %card_id, new_list_id = %list_id, "Card moved successfully");
+        trace!(card = ?data.item, "Moved card details");
         Ok(data.item)
     }
 
     pub async fn delete_card(&self, card_id: &str) -> Result<(), PlankaError> {
+        warn!(card_id = %card_id, "Deleting card");
         let path = format!("/api/cards/{card_id}");
 
         let resp = self.request(reqwest::Method::DELETE, &path)
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send card deletion request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "Card deletion failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
+        info!(card_id = %card_id, "Card deleted successfully");
         Ok(())
     }
 
     pub async fn delete_list(&self, list_id: &str) -> Result<(), PlankaError> {
+        warn!(list_id = %list_id, "Deleting list and all its cards");
         let path = format!("/api/lists/{list_id}");
 
         let resp = self.request(reqwest::Method::DELETE, &path)
             .await?
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(error = %e, path = %path, "Failed to send list deletion request");
+                e
+            })?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+        let status = resp.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlankaError::Status(status, body));
+            error!(
+                status = status_code,
+                path = %path,
+                response_body = %body,
+                "List deletion failed"
+            );
+            return Err(PlankaError::Status(status_code, body));
         }
 
+        info!(list_id = %list_id, "List deleted successfully");
         Ok(())
     }
 }

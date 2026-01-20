@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::mcp::types::{Tool, ToolAnnotations, ToolCallResult};
 use crate::planka::PlankaClient;
@@ -250,7 +251,10 @@ pub fn list_tools() -> Vec<Tool> {
 
 /// Dispatch a tool call to the appropriate handler
 pub async fn call_tool(client: &PlankaClient, name: &str, args: Option<Value>) -> ToolCallResult {
-    match name {
+    debug!(tool = %name, "Dispatching tool call");
+    trace!(tool = %name, args = ?args, "Tool call arguments");
+    
+    let result = match name {
         "list_projects" => list_projects(client).await,
         "list_boards" => list_boards(client, args).await,
         "list_lists" => list_lists(client, args).await,
@@ -262,17 +266,38 @@ pub async fn call_tool(client: &PlankaClient, name: &str, args: Option<Value>) -
         "move_card" => move_card(client, args).await,
         "delete_card" => delete_card(client, args).await,
         "delete_list" => delete_list(client, args).await,
-        _ => ToolCallResult::error(format!("Unknown tool: {name}")),
+        _ => {
+            error!(tool = %name, "Unknown tool requested");
+            ToolCallResult::error(format!("Unknown tool: {name}"))
+        }
+    };
+    
+    match &result {
+        ToolCallResult { is_error: Some(true), .. } => {
+            warn!(tool = %name, "Tool call failed");
+            trace!(tool = %name, result = ?result, "Tool failure details");
+        }
+        _ => {
+            info!(tool = %name, "Tool call succeeded");
+            trace!(tool = %name, result = ?result, "Tool success details");
+        }
     }
+    
+    result
 }
 
 async fn list_projects(client: &PlankaClient) -> ToolCallResult {
+    debug!("Executing list_projects tool");
     match client.list_projects().await {
         Ok(projects) => {
+            info!(count = projects.len(), "Projects listed successfully");
             let json = serde_json::to_string_pretty(&projects).unwrap_or_default();
             ToolCallResult::text(json)
         }
-        Err(e) => ToolCallResult::error(format!("Failed to list projects: {e}")),
+        Err(e) => {
+            error!(error = %e, "Failed to list projects");
+            ToolCallResult::error(format!("Failed to list projects: {e}"))
+        }
     }
 }
 

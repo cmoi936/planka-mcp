@@ -2,6 +2,15 @@
 
 A Model Context Protocol (MCP) server for [Planka](https://planka.app/) kanban boards, written in Rust.
 
+## Features
+
+- ✅ Full Planka API v1 compatibility
+- 📝 Complete CRUD operations for projects, boards, lists, and cards
+- 🔍 Structured logging with configurable log levels
+- 🔒 Secure authentication (token or email/password)
+- 🚀 Programmatic tool calling support (Anthropic beta)
+- 🐳 Docker support
+
 ## Installation
 
 ### From Docker (recommended)
@@ -37,6 +46,25 @@ export PLANKA_TOKEN="your-token-here"
 # Option 2: Email/password authentication
 export PLANKA_EMAIL="admin@example.com"
 export PLANKA_PASSWORD="your-password"
+
+# Optional: Configure log level (default: info)
+export RUST_LOG=info  # Options: error, warn, info, debug, trace
+```
+
+### Logging
+
+See [LOGGING.md](LOGGING.md) for detailed logging configuration and troubleshooting guide.
+
+Quick examples:
+```bash
+# Normal operation (default)
+RUST_LOG=info ./planka-mcp
+
+# Debug mode for troubleshooting
+RUST_LOG=debug ./planka-mcp
+
+# Trace API requests/responses
+RUST_LOG=planka_mcp::planka=trace ./planka-mcp
 ```
 
 ### Run
