@@ -188,26 +188,17 @@ impl PlankaClient {
         Ok(data.included.lists)
     }
 
-    pub async fn create_card(
-        &self,
-        list_id: &str,
-        card_type: CardType,
-        name: &str,
-        description: Option<&str>,
-        due_date: Option<&str>,
-        is_due_completed: Option<bool>,
-        stopwatch: Option<Stopwatch>,
-    ) -> Result<Card, PlankaError> {
-        let path = format!("/api/lists/{list_id}/cards");
+    pub async fn create_card(&self, options: CreateCardOptions) -> Result<Card, PlankaError> {
+        let path = format!("/api/lists/{}/cards", options.list_id);
 
         let body = CreateCardRequest {
-            card_type,
-            name: name.to_string(),
-            description: description.map(|s| s.to_string()),
+            card_type: options.card_type,
+            name: options.name,
+            description: options.description,
             position: 65535.0, // Default position at end
-            due_date: due_date.map(|s| s.to_string()),
-            is_due_completed,
-            stopwatch,
+            due_date: options.due_date,
+            is_due_completed: options.is_due_completed,
+            stopwatch: options.stopwatch,
         };
 
         let resp = self.request(reqwest::Method::POST, &path)
@@ -285,41 +276,35 @@ impl PlankaClient {
     pub async fn update_card(
         &self,
         card_id: &str,
-        name: Option<&str>,
-        description: Option<&str>,
-        card_type: Option<CardType>,
-        due_date: Option<&str>,
-        is_due_completed: Option<bool>,
-        board_id: Option<&str>,
-        cover_attachment_id: Option<&str>,
+        options: UpdateCardOptions,
     ) -> Result<Card, PlankaError> {
         let path = format!("/api/cards/{card_id}");
 
         let mut body = serde_json::Map::new();
-        if let Some(n) = name {
-            body.insert("name".to_string(), serde_json::Value::String(n.to_string()));
+        if let Some(n) = options.name {
+            body.insert("name".to_string(), serde_json::Value::String(n));
         }
-        if let Some(d) = description {
-            body.insert("description".to_string(), serde_json::Value::String(d.to_string()));
+        if let Some(d) = options.description {
+            body.insert("description".to_string(), serde_json::Value::String(d));
         }
-        if let Some(t) = card_type {
+        if let Some(t) = options.card_type {
             let type_str = match t {
                 CardType::Project => "project",
                 CardType::Story => "story",
             };
             body.insert("type".to_string(), serde_json::Value::String(type_str.to_string()));
         }
-        if let Some(dd) = due_date {
-            body.insert("dueDate".to_string(), serde_json::Value::String(dd.to_string()));
+        if let Some(dd) = options.due_date {
+            body.insert("dueDate".to_string(), serde_json::Value::String(dd));
         }
-        if let Some(dc) = is_due_completed {
+        if let Some(dc) = options.is_due_completed {
             body.insert("isDueCompleted".to_string(), serde_json::Value::Bool(dc));
         }
-        if let Some(bid) = board_id {
-            body.insert("boardId".to_string(), serde_json::Value::String(bid.to_string()));
+        if let Some(bid) = options.board_id {
+            body.insert("boardId".to_string(), serde_json::Value::String(bid));
         }
-        if let Some(cid) = cover_attachment_id {
-            body.insert("coverAttachmentId".to_string(), serde_json::Value::String(cid.to_string()));
+        if let Some(cid) = options.cover_attachment_id {
+            body.insert("coverAttachmentId".to_string(), serde_json::Value::String(cid));
         }
 
         let resp = self.request(reqwest::Method::PATCH, &path)

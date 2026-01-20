@@ -418,25 +418,24 @@ async fn create_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
     };
 
     // Parse card type
-    use crate::planka::types::CardType;
+    use crate::planka::types::{CardType, CreateCardOptions};
     let card_type = match args.card_type.to_lowercase().as_str() {
         "project" => CardType::Project,
         "story" => CardType::Story,
         _ => return ToolCallResult::error("Invalid card type. Must be 'project' or 'story'"),
     };
 
-    match client
-        .create_card(
-            &args.list_id,
-            card_type,
-            &args.name,
-            args.description.as_deref(),
-            args.due_date.as_deref(),
-            args.is_due_completed,
-            None, // stopwatch not supported in tool args for now
-        )
-        .await
-    {
+    let options = CreateCardOptions {
+        list_id: args.list_id,
+        card_type,
+        name: args.name,
+        description: args.description,
+        due_date: args.due_date,
+        is_due_completed: args.is_due_completed,
+        stopwatch: None, // stopwatch not supported in tool args for now
+    };
+
+    match client.create_card(options).await {
         Ok(card) => {
             let json = serde_json::to_string_pretty(&card).unwrap_or_default();
             ToolCallResult::text(json)
@@ -468,7 +467,7 @@ async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
     };
 
     // Parse card type if provided
-    use crate::planka::types::CardType;
+    use crate::planka::types::{CardType, UpdateCardOptions};
     let card_type = if let Some(ref type_str) = args.card_type {
         match type_str.to_lowercase().as_str() {
             "project" => Some(CardType::Project),
@@ -479,19 +478,17 @@ async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
         None
     };
 
-    match client
-        .update_card(
-            &args.card_id,
-            args.name.as_deref(),
-            args.description.as_deref(),
-            card_type,
-            args.due_date.as_deref(),
-            args.is_due_completed,
-            args.board_id.as_deref(),
-            args.cover_attachment_id.as_deref(),
-        )
-        .await
-    {
+    let options = UpdateCardOptions {
+        name: args.name,
+        description: args.description,
+        card_type,
+        due_date: args.due_date,
+        is_due_completed: args.is_due_completed,
+        board_id: args.board_id,
+        cover_attachment_id: args.cover_attachment_id,
+    };
+
+    match client.update_card(&args.card_id, options).await {
         Ok(card) => {
             let json = serde_json::to_string_pretty(&card).unwrap_or_default();
             ToolCallResult::text(json)

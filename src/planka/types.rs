@@ -160,6 +160,18 @@ pub struct CreateCardRequest {
     pub stopwatch: Option<Stopwatch>,
 }
 
+/// Options for creating a card
+#[derive(Debug, Clone)]
+pub struct CreateCardOptions {
+    pub list_id: String,
+    pub card_type: CardType,
+    pub name: String,
+    pub description: Option<String>,
+    pub due_date: Option<String>,
+    pub is_due_completed: Option<bool>,
+    pub stopwatch: Option<Stopwatch>,
+}
+
 /// Response from POST /api/projects/{projectId}/boards
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,4 +200,16 @@ pub struct ListResponse {
 pub struct CreateListRequest {
     pub name: String,
     pub position: f64,
+}
+
+/// Options for updating a card
+#[derive(Debug, Clone, Default)]
+pub struct UpdateCardOptions {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub card_type: Option<CardType>,
+    pub due_date: Option<String>,
+    pub is_due_completed: Option<bool>,
+    pub board_id: Option<String>,
+    pub cover_attachment_id: Option<String>,
 }
