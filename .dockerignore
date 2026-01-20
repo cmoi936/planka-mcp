@@ -33,6 +33,3 @@ test_*.sh
 
 # Documentation that doesn't need to be in the image
 *.md
-
-# License file (we'll keep it)
-# LICENSE
