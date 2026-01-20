@@ -77,8 +77,8 @@ src/
 | `list_cards` | List cards on a board (`board_id` param) |
 | `create_board` | Create board (`project_id`, `name`) - requires Project Manager role |
 | `create_list` | Create list (`board_id`, `name`) |
-| `create_card` | Create card (`list_id`, `name`, optional `description`) |
-| `update_card` | Update card (`card_id`, optional `name`, optional `description`) |
+| `create_card` | Create card (`list_id`, `type` (default: "project"), `name`, optional `description`, `due_date`, `is_due_completed`) |
+| `update_card` | Update card (`card_id`, optional `name`, `description`, `type`, `due_date`, `is_due_completed`, `board_id`, `cover_attachment_id`) |
 | `move_card` | Move card (`card_id`, `list_id`, optional `position`) |
 | `delete_card` | Delete card (`card_id`) |
 | `delete_list` | Delete list and cards (`list_id`) |

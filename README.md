@@ -2,6 +2,15 @@
 
 A Model Context Protocol (MCP) server for [Planka](https://planka.app/) kanban boards, written in Rust.
 
+## Features
+
+- ✅ Full Planka API v1 compatibility
+- 📝 Complete CRUD operations for projects, boards, lists, and cards
+- 🔍 Structured logging with configurable log levels
+- 🔒 Secure authentication (token or email/password)
+- 🚀 Programmatic tool calling support (Anthropic beta)
+- 🐳 Docker support
+
 ## Installation
 
 ### From Docker (recommended)
@@ -37,6 +46,25 @@ export PLANKA_TOKEN="your-token-here"
 # Option 2: Email/password authentication
 export PLANKA_EMAIL="admin@example.com"
 export PLANKA_PASSWORD="your-password"
+
+# Optional: Configure log level (default: info)
+export RUST_LOG=info  # Options: error, warn, info, debug, trace
+```
+
+### Logging
+
+See [LOGGING.md](LOGGING.md) for detailed logging configuration and troubleshooting guide.
+
+Quick examples:
+```bash
+# Normal operation (default)
+RUST_LOG=info ./planka-mcp
+
+# Debug mode for troubleshooting
+RUST_LOG=debug ./planka-mcp
+
+# Trace API requests/responses
+RUST_LOG=planka_mcp::planka=trace ./planka-mcp
 ```
 
 ### Run
@@ -109,8 +137,8 @@ Add to your MCP client configuration:
 | `list_cards` | List cards on a board | Yes |
 | `create_board` | Create a new board (requires Project Manager role) | Yes |
 | `create_list` | Create a new column on a board | Yes |
-| `create_card` | Create a new card in a list | Yes |
-| `update_card` | Update card name/description | Yes |
+| `create_card` | Create a new card with type, due date, and description | Yes |
+| `update_card` | Update card properties (name, description, type, due date, board, cover) | Yes |
 | `move_card` | Move card to different list | Yes |
 | `delete_card` | Delete a card | No |
 | `delete_list` | Delete a list and all its cards | No |
@@ -203,8 +231,19 @@ To add new tools:
 
 Future tools to consider:
 - `add_comment` - Add comment to a card
-- `set_due_date` - Set card due date
 - `add_label` - Add label to a card
+- `get_cards_in_list` - Get cards with pagination and filtering (GET /api/lists/{listId}/cards)
+
+## API Compatibility
+
+This implementation is compatible with the official Planka API as documented at [plankanban.github.io/planka/swagger-ui](https://plankanban.github.io/planka/swagger-ui/). 
+
+Recent updates include:
+- Card types (project/story)
+- Due dates and completion status
+- Card cover images
+- Moving cards between boards
+- Additional timestamp fields
 
 ## License
 

@@ -1,4 +1,30 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Card types supported by Planka
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CardType {
+    Project,
+    Story,
+}
+
+impl fmt::Display for CardType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CardType::Project => write!(f, "project"),
+            CardType::Story => write!(f, "story"),
+        }
+    }
+}
+
+/// Stopwatch data for time tracking on cards
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stopwatch {
+    pub started_at: Option<String>,
+    pub total: f64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -7,6 +33,10 @@ pub struct Project {
     pub name: String,
     #[serde(default)]
     pub slug: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +46,12 @@ pub struct Board {
     pub name: String,
     #[serde(default)]
     pub position: Option<f64>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,12 +62,18 @@ pub struct List {
     #[serde(default)]
     pub position: Option<f64>,
     pub board_id: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Card {
     pub id: String,
+    #[serde(rename = "type")]
+    pub card_type: CardType,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -40,6 +82,20 @@ pub struct Card {
     pub position: Option<f64>,
     #[serde(default)]
     pub board_id: Option<String>,
+    #[serde(default)]
+    pub creator_user_id: Option<String>,
+    #[serde(default)]
+    pub cover_attachment_id: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
+    #[serde(default)]
+    pub is_due_completed: Option<bool>,
+    #[serde(default)]
+    pub stopwatch: Option<Stopwatch>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 /// Response from GET /api/projects
@@ -100,10 +156,30 @@ pub struct CardResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCardRequest {
+    #[serde(rename = "type")]
+    pub card_type: CardType,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub position: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_due_completed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stopwatch: Option<Stopwatch>,
+}
+
+/// Options for creating a card
+#[derive(Debug, Clone)]
+pub struct CreateCardOptions {
+    pub list_id: String,
+    pub card_type: CardType,
+    pub name: String,
+    pub description: Option<String>,
+    pub due_date: Option<String>,
+    pub is_due_completed: Option<bool>,
+    pub stopwatch: Option<Stopwatch>,
 }
 
 /// Response from POST /api/projects/{projectId}/boards
@@ -134,4 +210,16 @@ pub struct ListResponse {
 pub struct CreateListRequest {
     pub name: String,
     pub position: f64,
+}
+
+/// Options for updating a card
+#[derive(Debug, Clone, Default)]
+pub struct UpdateCardOptions {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub card_type: Option<CardType>,
+    pub due_date: Option<String>,
+    pub is_due_completed: Option<bool>,
+    pub board_id: Option<String>,
+    pub cover_attachment_id: Option<String>,
 }

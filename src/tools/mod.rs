@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::mcp::types::{Tool, ToolAnnotations, ToolCallResult};
 use crate::planka::PlankaClient;
@@ -117,6 +118,12 @@ pub fn list_tools() -> Vec<Tool> {
                         "type": "string",
                         "description": "The list ID to create the card in"
                     },
+                    "type": {
+                        "type": "string",
+                        "enum": ["project", "story"],
+                        "description": "Type of the card (project or story)",
+                        "default": "project"
+                    },
                     "name": {
                         "type": "string",
                         "description": "The card title"
@@ -124,6 +131,15 @@ pub fn list_tools() -> Vec<Tool> {
                     "description": {
                         "type": "string",
                         "description": "Optional card description"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Optional due date (ISO 8601 format)"
+                    },
+                    "is_due_completed": {
+                        "type": "boolean",
+                        "description": "Whether the due date is completed"
                     }
                 },
                 "required": ["list_id", "name"]
@@ -132,7 +148,7 @@ pub fn list_tools() -> Vec<Tool> {
         },
         Tool {
             name: "update_card".to_string(),
-            description: "Update a card's name or description".to_string(),
+            description: "Update a card's properties (name, description, type, due date, etc.)".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -147,6 +163,28 @@ pub fn list_tools() -> Vec<Tool> {
                     "description": {
                         "type": "string",
                         "description": "New card description (optional)"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["project", "story"],
+                        "description": "Card type (optional)"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Due date in ISO 8601 format (optional)"
+                    },
+                    "is_due_completed": {
+                        "type": "boolean",
+                        "description": "Whether the due date is completed (optional)"
+                    },
+                    "board_id": {
+                        "type": "string",
+                        "description": "Move card to different board (optional)"
+                    },
+                    "cover_attachment_id": {
+                        "type": "string",
+                        "description": "Set cover image attachment ID (optional)"
                     }
                 },
                 "required": ["card_id"]
@@ -213,7 +251,10 @@ pub fn list_tools() -> Vec<Tool> {
 
 /// Dispatch a tool call to the appropriate handler
 pub async fn call_tool(client: &PlankaClient, name: &str, args: Option<Value>) -> ToolCallResult {
-    match name {
+    debug!(tool = %name, "Dispatching tool call");
+    trace!(tool = %name, args = ?args, "Tool call arguments");
+    
+    let result = match name {
         "list_projects" => list_projects(client).await,
         "list_boards" => list_boards(client, args).await,
         "list_lists" => list_lists(client, args).await,
@@ -225,17 +266,38 @@ pub async fn call_tool(client: &PlankaClient, name: &str, args: Option<Value>) -
         "move_card" => move_card(client, args).await,
         "delete_card" => delete_card(client, args).await,
         "delete_list" => delete_list(client, args).await,
-        _ => ToolCallResult::error(format!("Unknown tool: {name}")),
+        _ => {
+            error!(tool = %name, "Unknown tool requested");
+            ToolCallResult::error(format!("Unknown tool: {name}"))
+        }
+    };
+    
+    match &result {
+        ToolCallResult { is_error: Some(true), .. } => {
+            warn!(tool = %name, "Tool call failed");
+            trace!(tool = %name, result = ?result, "Tool failure details");
+        }
+        _ => {
+            info!(tool = %name, "Tool call succeeded");
+            trace!(tool = %name, result = ?result, "Tool success details");
+        }
     }
+    
+    result
 }
 
 async fn list_projects(client: &PlankaClient) -> ToolCallResult {
+    debug!("Executing list_projects tool");
     match client.list_projects().await {
         Ok(projects) => {
+            info!(count = projects.len(), "Projects listed successfully");
             let json = serde_json::to_string_pretty(&projects).unwrap_or_default();
             ToolCallResult::text(json)
         }
-        Err(e) => ToolCallResult::error(format!("Failed to list projects: {e}")),
+        Err(e) => {
+            error!(error = %e, "Failed to list projects");
+            ToolCallResult::error(format!("Failed to list projects: {e}"))
+        }
     }
 }
 
@@ -359,8 +421,16 @@ async fn create_list(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
 #[derive(Deserialize)]
 struct CreateCardArgs {
     list_id: String,
+    #[serde(rename = "type", default = "default_card_type")]
+    card_type: String,
     name: String,
     description: Option<String>,
+    due_date: Option<String>,
+    is_due_completed: Option<bool>,
+}
+
+fn default_card_type() -> String {
+    "project".to_string()
 }
 
 async fn create_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResult {
@@ -372,10 +442,25 @@ async fn create_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
         None => return ToolCallResult::error("Missing required arguments: list_id, name"),
     };
 
-    match client
-        .create_card(&args.list_id, &args.name, args.description.as_deref())
-        .await
-    {
+    // Parse card type
+    use crate::planka::types::{CardType, CreateCardOptions};
+    let card_type = match args.card_type.to_lowercase().as_str() {
+        "project" => CardType::Project,
+        "story" => CardType::Story,
+        _ => return ToolCallResult::error("Invalid card type. Must be 'project' or 'story'"),
+    };
+
+    let options = CreateCardOptions {
+        list_id: args.list_id,
+        card_type,
+        name: args.name,
+        description: args.description,
+        due_date: args.due_date,
+        is_due_completed: args.is_due_completed,
+        stopwatch: None, // stopwatch not supported in tool args for now
+    };
+
+    match client.create_card(options).await {
         Ok(card) => {
             let json = serde_json::to_string_pretty(&card).unwrap_or_default();
             ToolCallResult::text(json)
@@ -389,6 +474,12 @@ struct UpdateCardArgs {
     card_id: String,
     name: Option<String>,
     description: Option<String>,
+    #[serde(rename = "type")]
+    card_type: Option<String>,
+    due_date: Option<String>,
+    is_due_completed: Option<bool>,
+    board_id: Option<String>,
+    cover_attachment_id: Option<String>,
 }
 
 async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResult {
@@ -400,10 +491,29 @@ async fn update_card(client: &PlankaClient, args: Option<Value>) -> ToolCallResu
         None => return ToolCallResult::error("Missing required argument: card_id"),
     };
 
-    match client
-        .update_card(&args.card_id, args.name.as_deref(), args.description.as_deref())
-        .await
-    {
+    // Parse card type if provided
+    use crate::planka::types::{CardType, UpdateCardOptions};
+    let card_type = if let Some(ref type_str) = args.card_type {
+        match type_str.to_lowercase().as_str() {
+            "project" => Some(CardType::Project),
+            "story" => Some(CardType::Story),
+            _ => return ToolCallResult::error("Invalid card type. Must be 'project' or 'story'"),
+        }
+    } else {
+        None
+    };
+
+    let options = UpdateCardOptions {
+        name: args.name,
+        description: args.description,
+        card_type,
+        due_date: args.due_date,
+        is_due_completed: args.is_due_completed,
+        board_id: args.board_id,
+        cover_attachment_id: args.cover_attachment_id,
+    };
+
+    match client.update_card(&args.card_id, options).await {
         Ok(card) => {
             let json = serde_json::to_string_pretty(&card).unwrap_or_default();
             ToolCallResult::text(json)
