@@ -165,8 +165,7 @@ Add to `~/.claude/mcp.json`:
       ],
       "env": {
         "PLANKA_URL": "https://kanban.local",
-        "PLANKA_EMAIL": "user@example.com",
-        "PLANKA_PASSWORD": "your-password"
+        "PLANKA_TOKEN": "your-token"
       }
     }
   }
