@@ -4,16 +4,22 @@ A Model Context Protocol (MCP) server for [Planka](https://planka.app/) kanban b
 
 ## Installation
 
-### From GitHub (recommended)
+### From Docker (recommended)
 
 ```bash
-cargo install --git https://github.com/AcceleratedIndustries/planka-mcp
+docker pull ghcr.io/cmoi936/planka-mcp:latest
+```
+
+### From GitHub
+
+```bash
+cargo install --git https://github.com/cmoi936/planka-mcp
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/AcceleratedIndustries/planka-mcp
+git clone https://github.com/cmoi936/planka-mcp
 cd planka-mcp
 cargo build --release
 ```
@@ -36,6 +42,12 @@ export PLANKA_PASSWORD="your-password"
 ### Run
 
 ```bash
+# If using Docker:
+docker run -it --rm \
+  -e PLANKA_URL="https://kanban.local" \
+  -e PLANKA_TOKEN="your-token" \
+  ghcr.io/cmoi936/planka-mcp:latest
+
 # If installed via cargo install:
 planka-mcp
 
@@ -44,6 +56,32 @@ planka-mcp
 ```
 
 ## MCP Client Configuration
+
+### With Docker
+
+Add to your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "planka": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "ghcr.io/cmoi936/planka-mcp:latest"
+      ],
+      "env": {
+        "PLANKA_URL": "https://kanban.local",
+        "PLANKA_TOKEN": "your-token"
+      }
+    }
+  }
+}
+```
+
+### With Binary
 
 Add to your MCP client configuration:
 
@@ -109,6 +147,32 @@ With programmatic calling enabled, Claude can efficiently handle batch operation
 - "Find all cards assigned to me across all boards"
 
 ## Claude Code Integration
+
+### With Docker
+
+Add to `~/.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "planka": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "ghcr.io/cmoi936/planka-mcp:latest"
+      ],
+      "env": {
+        "PLANKA_URL": "https://kanban.local",
+        "PLANKA_TOKEN": "your-token"
+      }
+    }
+  }
+}
+```
+
+### With Binary
 
 Add to `~/.claude/mcp.json`:
 
