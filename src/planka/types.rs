@@ -88,7 +88,7 @@ pub struct Card {
     pub cover_attachment_id: Option<String>,
     #[serde(default)]
     pub due_date: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "isDueDateCompleted")]
     pub is_due_completed: Option<bool>,
     #[serde(default)]
     pub stopwatch: Option<Stopwatch>,
@@ -164,7 +164,7 @@ pub struct CreateCardRequest {
     pub position: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub due_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "isDueDateCompleted")]
     pub is_due_completed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stopwatch: Option<Stopwatch>,
