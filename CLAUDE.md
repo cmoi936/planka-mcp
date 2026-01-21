@@ -41,6 +41,10 @@ Required configuration (set before running):
 - Authentication (one of):
   - `PLANKA_TOKEN` - Bearer token (preferred)
   - `PLANKA_EMAIL` + `PLANKA_PASSWORD` - Login credentials
+- Optional:
+  - `DISABLE_SSL` - Set to `true` to disable SSL certificate validation (default: `false`)
+    - ⚠️ WARNING: Only use in development/testing environments
+    - Never use in production as it makes connections vulnerable to MITM attacks
 
 ## Architecture
 

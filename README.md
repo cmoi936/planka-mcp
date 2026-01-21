@@ -49,6 +49,12 @@ export PLANKA_PASSWORD="your-password"
 
 # Optional: Configure log level (default: info)
 export RUST_LOG=info  # Options: error, warn, info, debug, trace
+
+# Optional: Disable SSL certificate validation (default: false)
+# ⚠️  WARNING: Only use in development/testing environments!
+# This disables SSL certificate validation and makes connections insecure.
+# Never use this in production environments.
+export DISABLE_SSL=true
 ```
 
 ### Logging

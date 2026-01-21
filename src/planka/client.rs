@@ -71,14 +71,40 @@ impl PlankaClient {
             PlankaAuth::Credentials { email, password }
         };
 
-        let http = Client::builder()
+        // Check for DISABLE_SSL environment variable
+        let disable_ssl = std::env::var("DISABLE_SSL")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        if disable_ssl {
+            warn!(
+                "⚠️  SSL certificate validation is DISABLED. This is insecure and should only be used in development/testing environments."
+            );
+            warn!(
+                "⚠️  Never use DISABLE_SSL=true in production. Your connection is vulnerable to man-in-the-middle attacks."
+            );
+        }
+
+        let mut client_builder = Client::builder();
+        
+        if disable_ssl {
+            debug!("Building HTTP client with SSL verification disabled");
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+
+        let http = client_builder
             .build()
             .map_err(|e| {
                 error!(error = %e, "Failed to build HTTP client");
                 PlankaError::Http(e)
             })?;
 
-        info!(base_url = %base_url, "Planka client configured successfully");
+        info!(
+            base_url = %base_url,
+            ssl_validation = !disable_ssl,
+            "Planka client configured successfully"
+        );
         Ok(Self {
             base_url,
             http,
