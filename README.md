@@ -54,6 +54,7 @@ export RUST_LOG=info  # Options: error, warn, info, debug, trace
 # ⚠️  WARNING: Only use in development/testing environments!
 # This disables SSL certificate validation and makes connections insecure.
 # Never use this in production environments.
+# Accepts: true, 1, yes, on (case-insensitive)
 export DISABLE_SSL=true
 ```
 

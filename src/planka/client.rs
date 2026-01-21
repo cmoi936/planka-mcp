@@ -74,7 +74,10 @@ impl PlankaClient {
         // Check for DISABLE_SSL environment variable
         let disable_ssl = std::env::var("DISABLE_SSL")
             .ok()
-            .and_then(|v| v.parse::<bool>().ok())
+            .map(|v| {
+                // Accept various boolean representations (case-insensitive)
+                matches!(v.to_lowercase().as_str(), "true" | "1" | "yes" | "on")
+            })
             .unwrap_or(false);
 
         if disable_ssl {
@@ -86,14 +89,10 @@ impl PlankaClient {
             );
         }
 
-        let mut client_builder = Client::builder();
+        debug!("Building HTTP client with SSL verification {}", if disable_ssl { "disabled" } else { "enabled" });
         
-        if disable_ssl {
-            debug!("Building HTTP client with SSL verification disabled");
-            client_builder = client_builder.danger_accept_invalid_certs(true);
-        }
-
-        let http = client_builder
+        let http = Client::builder()
+            .danger_accept_invalid_certs(disable_ssl)
             .build()
             .map_err(|e| {
                 error!(error = %e, "Failed to build HTTP client");
